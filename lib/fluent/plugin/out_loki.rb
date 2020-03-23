@@ -178,7 +178,7 @@ class Fluent::Plugin::LokiOutput < Fluent::Plugin::Output
     return st
   end
   def handle_record(tag, time, record)
-    rec = {"streams"=>[{"labels"=>format_labels(@labels), "entries"=>[{"ts"=>Time.now.iso8601(3), "line"=>record.to_json}]}]}
+    rec = {"streams"=>[{"labels"=>format_labels(@labels), "entries"=>[{"ts"=>Time.now.iso8601(3), "line"=>encoding_hash(record).to_json}]}]}
     # I used time now instead of at 'time' because it cause 'Entry out of order' on loki's side
     req, uri = create_request(tag, time, rec)
     send_request(req, uri)
@@ -211,6 +211,28 @@ class Fluent::Plugin::LokiOutput < Fluent::Plugin::Output
     @endpoint_url = extract_placeholders(@endpoint_url, chunk.metadata)
     chunk.msgpack_each do |time, record|
       handle_record(tag, time, record)
+    end
+  end
+
+  def encoding_hash(hash, encode = Encoding::UTF_8)
+    hash&.map do |k, v|
+      case v
+      when Hash then [k, encoding_hash(v, encode)]
+      when Array then [k, encoding_array(v, encode)]
+      when String then [k, v.force_encoding(encode)]
+      else [k, v]
+      end
+    end&.to_h
+  end
+  
+  def encoding_array(array, encode = Encoding::UTF_8)
+    array&.map do |v|
+      case v
+      when Hash then encoding_hash(v, encode)
+      when Array then encoding_array(v, encode)
+      when String then v.force_encoding(encode)
+      else v
+      end
     end
   end
 end
